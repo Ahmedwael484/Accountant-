@@ -45,7 +45,7 @@
 
         /* App Layout */
         .app-container { display: flex; min-height: 100vh; }
-        .sidebar { width: 250px; background-color: var(--white-color); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; transition: transform var(--transition-speed); }
+        .sidebar { width: 250px; background-color: var(--white-color); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; transition: transform var(--transition-speed); z-index: 200; }
         .sidebar-header { padding: 1.5rem; border-bottom: 1px solid var(--border-color); text-align: center; }
         .sidebar-header h3 { color: var(--primary-color); }
         .sidebar-nav ul { list-style: none; padding: 1rem 0; }
@@ -101,8 +101,8 @@
         .search-input { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: var(--border-radius); margin-bottom: 1.5rem; font-size: 1rem; }
         
         /* Modals & Forms */
-        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 100; display: none; opacity: 0; transition: opacity var(--transition-speed); }
-        .modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.95); background-color: var(--white-color); border-radius: var(--border-radius); box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 101; width: 90%; max-width: 500px; display: none; opacity: 0; transition: opacity var(--transition-speed), transform var(--transition-speed); }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 150; /* Z-index is between content and sidebar/modal */ display: none; opacity: 0; transition: opacity var(--transition-speed); }
+        .modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.95); background-color: var(--white-color); border-radius: var(--border-radius); box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 200; width: 90%; max-width: 500px; display: none; opacity: 0; transition: opacity var(--transition-speed), transform var(--transition-speed); }
         .modal.visible { display: block; opacity: 1; transform: translate(-50%, -50%) scale(1); }
         .modal-backdrop.visible { display: block; opacity: 1; }
         .modal.large { max-width: 800px; }
@@ -119,7 +119,7 @@
         .category-tag button { background: none; border: none; color: #999; cursor: pointer; }
 
         /* Toast Notifications */
-        .toast-container { position: fixed; bottom: 20px; left: 20px; z-index: 200; }
+        .toast-container { position: fixed; bottom: 20px; left: 20px; z-index: 999; }
         .toast { padding: 1rem 1.5rem; margin-bottom: 1rem; border-radius: var(--border-radius); color: var(--white-color); box-shadow: var(--shadow); opacity: 0; transform: translateX(-200px); animation: slideIn 0.5s forwards, slideOut 0.5s 4.5s forwards; }
         .toast-success { background-color: var(--success-color); }
         .toast-error { background-color: var(--danger-color); }
@@ -128,9 +128,19 @@
 
         /* Responsive Design */
         @media (max-width: 768px) {
-            .sidebar { position: fixed; top: 0; right: -250px; height: 100%; z-index: 200; transition: transform 0.3s ease-in-out; }
-            .sidebar.open { transform: translateX(-250px); }
-            .menu-toggle { display: block; }
+            .sidebar {
+                position: fixed;
+                top: 0;
+                right: -250px; /* Start off-screen */
+                height: 100vh;
+                transform: translateX(0); /* The transition will be on transform */
+            }
+            .sidebar.open {
+                transform: translateX(-250px); /* Slide into view */
+            }
+            .menu-toggle {
+                display: block;
+            }
             .content-area { padding: 1rem; }
         }
         
@@ -602,16 +612,36 @@
         // =================================================================================
 
         // --- Navigation ---
+        function closeSidebar() {
+            DOMElements.sidebar.classList.remove('open');
+            DOMElements.modalBackdrop.classList.remove('visible');
+        }
+
         function switchPage(targetId) {
             DOMElements.pages.forEach(page => page.classList.remove('active'));
             document.getElementById(targetId).classList.add('active');
             DOMElements.navLinks.forEach(link => link.classList.toggle('active', link.dataset.target === targetId));
             DOMElements.pageTitle.textContent = document.querySelector(`.nav-link[data-target="${targetId}"]`).textContent.trim();
+            if (window.innerWidth <= 768) {
+                closeSidebar();
+            }
         }
 
         DOMElements.navLinks.forEach(link => link.addEventListener('click', (e) => switchPage(e.currentTarget.dataset.target)));
-        DOMElements.menuToggle.addEventListener('click', () => DOMElements.sidebar.classList.toggle('open'));
-        DOMElements.modalBackdrop.addEventListener('click', () => document.querySelectorAll('.modal.visible').forEach(hideModal));
+        
+        DOMElements.menuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            DOMElements.sidebar.classList.add('open');
+            DOMElements.modalBackdrop.classList.add('visible');
+        });
+
+        // --- Generic Modal/Sidebar Dismissal ---
+        DOMElements.modalBackdrop.addEventListener('click', () => {
+            document.querySelectorAll('.modal.visible').forEach(hideModal);
+            if (DOMElements.sidebar.classList.contains('open')) {
+                closeSidebar();
+            }
+        });
 
         // --- Table Sorting ---
         [DOMElements.customersTable, DOMElements.invoicesTable, DOMElements.expensesTable].forEach(table => {
@@ -792,8 +822,6 @@
 
         // --- Invoice Logic ---
         DOMElements.addInvoiceBtn.addEventListener('click', () => {
-            // Logic to open and populate the invoice modal
-            // This is complex and will be handled by a dedicated function
             openInvoiceModal();
         });
 
@@ -803,26 +831,17 @@
             DOMElements.invoiceModal.innerHTML = `
                 <form id="invoice-form" class="modal-content">
                     <h3>${invoice ? `فاتورة #${state.settings.invoicePrefix}${invoice.id}` : 'إنشاء فاتورة جديدة'}</h3>
-                    <div style="display: flex; gap: 1rem;">
-                        <div class="form-group" style="flex: 2;">
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
+                        <div class="form-group">
                             <label for="invoice-customer">العميل</label>
                             <select id="invoice-customer" required ${invoice ? 'disabled' : ''}>
-                                ${state.customers.map(c => `<option value="${c.id}" ${invoice && invoice.customerId === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                                ${state.customers.map(c => `<option value="${c.id}" ${invoice && invoice.customerId == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
                             </select>
                         </div>
-                        <div class="form-group" style="flex: 1;">
+                        <div class="form-group">
                             <label for="invoice-due-date">تاريخ الاستحقاق</label>
-                            <input type="date" id="invoice-due-date" value="${invoice ? new Date(invoice.dueDate).toISOString().split('T')[0] : ''}" required>
+                            <input type="date" id="invoice-due-date" value="${invoice ? new Date(invoice.dueDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}" required>
                         </div>
-                        ${invoice ? `
-                        <div class="form-group" style="flex: 1;">
-                            <label for="invoice-status">الحالة</label>
-                            <select id="invoice-status">
-                                <option value="unpaid" ${getInvoiceStatus(invoice) === 'unpaid' ? 'selected' : ''}>غير مدفوعة</option>
-                                <option value="paid" ${getInvoiceStatus(invoice) === 'paid' ? 'selected' : ''}>مدفوعة</option>
-                            </select>
-                        </div>
-                        ` : ''}
                     </div>
                     <h4>عناصر الفاتورة</h4>
                     <div id="invoice-items-container" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem;"></div>
@@ -833,9 +852,21 @@
                         <div><span>الضريبة (${state.settings.taxRate}%):</span> <span id="tax"></span></div>
                         <div><strong>الإجمالي:</strong> <strong id="total"></strong></div>
                     </div>
+                     ${invoice ? `
+                        <hr style="margin: 1.5rem 0;">
+                        <h4>تحديث الحالة</h4>
+                        <div class="form-group">
+                            <label for="invoice-status">الحالة</label>
+                            <select id="invoice-status">
+                                <option value="unpaid" ${getInvoiceStatus(invoice) === 'unpaid' || getInvoiceStatus(invoice) === 'overdue' ? 'selected' : ''}>غير مدفوعة</option>
+                                <option value="paid" ${getInvoiceStatus(invoice) === 'paid' ? 'selected' : ''}>مدفوعة</option>
+                            </select>
+                        </div>
+                        ` : ''}
                     <div class="form-actions">
+                         <button type="button" id="print-invoice-btn" class="btn btn-secondary" style="margin-left: auto; ${!invoice ? 'display: none;' : ''}"><i class="fas fa-print"></i> طباعة</button>
                         <button type="submit" class="btn btn-primary">${invoice ? 'تحديث الفاتورة' : 'حفظ الفاتورة'}</button>
-                        <button type="button" class="btn btn-secondary" data-dismiss="modal">إلغاء</button>
+                        <button type="button" class="btn" data-dismiss="modal">إلغاء</button>
                     </div>
                 </form>
             `;
@@ -851,6 +882,8 @@
             form.querySelector('[data-dismiss="modal"]').addEventListener('click', () => hideModal(DOMElements.invoiceModal));
             if(!invoice) {
                 form.querySelector('#add-item-btn').addEventListener('click', () => itemsContainer.appendChild(createInvoiceItemElement()));
+            } else {
+                form.querySelector('#print-invoice-btn').addEventListener('click', () => printInvoice(invoiceId));
             }
             updateInvoiceTotals();
         }
@@ -869,11 +902,8 @@
                 ${!isReadOnly ? '<button type="button" class="delete-item-btn btn btn-secondary">&times;</button>' : ''}
             `;
             if (!isReadOnly) {
-                itemDiv.querySelector('.delete-item-btn').addEventListener('click', () => {
-                    itemDiv.remove();
-                    updateInvoiceTotals();
-                });
-                ['.item-quantity', '.item-price'].forEach(selector => {
+                itemDiv.querySelector('.delete-item-btn').addEventListener('click', () => { itemDiv.remove(); updateInvoiceTotals(); });
+                ['.item-quantity', '.item-price', '.item-description'].forEach(selector => {
                     itemDiv.querySelector(selector).addEventListener('input', updateInvoiceTotals);
                 });
             }
@@ -898,11 +928,11 @@
         function handleInvoiceSubmit(e, invoiceId) {
             e.preventDefault();
             
-            if (invoiceId) { // Update existing invoice status
+            if (invoiceId) {
                 const invoice = state.invoices.find(inv => inv.id === invoiceId);
                 invoice.status = document.getElementById('invoice-status').value;
                 invoice.dueDate = new Date(document.getElementById('invoice-due-date').value).toISOString();
-            } else { // Create new invoice
+            } else {
                 const items = Array.from(document.querySelectorAll('#invoice-items-container > div')).map(itemEl => ({
                     description: itemEl.querySelector('.item-description').value,
                     quantity: parseFloat(itemEl.querySelector('.item-quantity').value),
@@ -916,11 +946,7 @@
                     customerId: parseInt(document.getElementById('invoice-customer').value),
                     date: new Date().toISOString(),
                     dueDate: new Date(document.getElementById('invoice-due-date').value).toISOString(),
-                    items,
-                    subtotal,
-                    tax,
-                    total: subtotal + tax,
-                    status: 'unpaid'
+                    items, subtotal, tax, total: subtotal + tax, status: 'unpaid'
                 };
                 state.invoices.push(newInvoice);
                 state.settings.nextInvoiceNumber++;
@@ -934,17 +960,11 @@
         }
         
         DOMElements.invoicesTable.addEventListener('click', e => {
-            const viewBtn = e.target.closest('.view-btn');
-            const deleteBtn = e.target.closest('.delete-btn');
-            
-            if (viewBtn) {
-                openInvoiceModal(parseInt(viewBtn.dataset.id));
-            }
-            
-            if (deleteBtn) {
+            if (e.target.closest('.view-btn')) { openInvoiceModal(parseInt(e.target.closest('.view-btn').dataset.id)); }
+            if (e.target.closest('.delete-btn')) {
                 showConfirm('حذف الفاتورة', 'هل أنت متأكد من حذف هذه الفاتورة؟').then(confirmed => {
                     if (confirmed) {
-                        state.invoices = state.invoices.filter(inv => inv.id != deleteBtn.dataset.id);
+                        state.invoices = state.invoices.filter(inv => inv.id != e.target.closest('.delete-btn').dataset.id);
                         saveState();
                         renderInvoices();
                         renderDashboard();
@@ -952,6 +972,57 @@
                     }
                 });
             }
+        });
+
+        function printInvoice(invoiceId) {
+            const invoice = state.invoices.find(inv => inv.id === invoiceId);
+            const customer = state.customers.find(c => c.id === invoice.customerId);
+            DOMElements.viewInvoiceModal.innerHTML = `
+                <div class="modal-content">
+                    <div id="invoice-preview">
+                         <div style="text-align: center; margin-bottom: 2rem;">
+                            <h2>${state.settings.companyName}</h2>
+                            <p>${state.settings.companyAddress}</p>
+                         </div>
+                         <hr>
+                         <div style="display: flex; justify-content: space-between; margin: 2rem 0;">
+                            <div>
+                                <h4>فاتورة إلى:</h4>
+                                <p>${customer ? customer.name : 'عميل محذوف'}</p>
+                                <p>${customer ? customer.address : ''}</p>
+                                <p>${customer ? customer.email : ''}</p>
+                            </div>
+                            <div style="text-align:left;">
+                                <p><strong>رقم الفاتورة:</strong> ${state.settings.invoicePrefix}${invoice.id}</p>
+                                <p><strong>تاريخ الإصدار:</strong> ${formatDate(invoice.date)}</p>
+                                <p><strong>تاريخ الاستحقاق:</strong> ${formatDate(invoice.dueDate)}</p>
+                            </div>
+                         </div>
+                         <table style="width:100%; border-collapse: collapse;">
+                            <thead style="background: #eee;"><tr><th style="padding: 10px; border: 1px solid #ddd;">الوصف</th><th style="padding: 10px; border: 1px solid #ddd;">الكمية</th><th style="padding: 10px; border: 1px solid #ddd;">سعر الوحدة</th><th style="padding: 10px; border: 1px solid #ddd;">الإجمالي</th></tr></thead>
+                            <tbody>${invoice.items.map(item => `<tr><td style="padding: 10px; border: 1px solid #ddd;">${item.description}</td><td style="padding: 10px; border: 1px solid #ddd;">${item.quantity}</td><td style="padding: 10px; border: 1px solid #ddd;">${formatCurrency(item.price)}</td><td style="padding: 10px; border: 1px solid #ddd;">${formatCurrency(item.quantity * item.price)}</td></tr>`).join('')}</tbody>
+                         </table>
+                         <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
+                             <div style="width: 40%;">
+                                 <p style="display: flex; justify-content: space-between;"><span>المجموع الفرعي:</span> <span>${formatCurrency(invoice.subtotal)}</span></p>
+                                 <p style="display: flex; justify-content: space-between;"><span>الضريبة (${state.settings.taxRate}%):</span> <span>${formatCurrency(invoice.tax)}</span></p>
+                                 <hr>
+                                 <h3 style="display: flex; justify-content: space-between;"><span>الإجمالي:</span> <span>${formatCurrency(invoice.total)}</span></h3>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+            `;
+            window.print();
+        }
+
+        DOMElements.invoiceSearch.addEventListener('input', e => {
+            const term = e.target.value.toLowerCase();
+            const filtered = state.invoices.filter(inv => {
+                const customerName = (state.customers.find(c => c.id === inv.customerId) || {}).name || "";
+                return `${state.settings.invoicePrefix}${inv.id}`.toLowerCase().includes(term) || customerName.toLowerCase().includes(term);
+            });
+            renderInvoices(filtered);
         });
 
         // --- Expense Logic ---
@@ -963,7 +1034,7 @@
                     <div class="form-group"><label for="expense-category">الفئة</label><select id="expense-category" required>${state.settings.expenseCategories.map(c => `<option value="${c}">${c}</option>`).join('')}</select></div>
                     <div class="form-group"><label for="expense-amount">المبلغ</label><input type="number" id="expense-amount" required min="0.01" step="0.01"></div>
                     <div class="form-group"><label for="expense-description">الوصف</label><input type="text" id="expense-description" required></div>
-                    <div class="form-actions"><button type="submit" class="btn btn-primary">حفظ</button><button type="button" class="btn btn-secondary" data-dismiss="modal">إلغاء</button></div>
+                    <div class="form-actions"><button type="submit" class="btn btn-primary">حفظ</button><button type="button" class="btn" data-dismiss="modal">إلغاء</button></div>
                 </form>
             `;
             showModal(DOMElements.expenseModal);
@@ -973,14 +1044,13 @@
 
         function handleExpenseSubmit(e) {
             e.preventDefault();
-            const expenseData = {
+            state.expenses.push({
                 id: Date.now(),
                 date: new Date(document.getElementById('expense-date').value).toISOString(),
                 category: document.getElementById('expense-category').value,
                 amount: parseFloat(document.getElementById('expense-amount').value),
                 description: document.getElementById('expense-description').value,
-            };
-            state.expenses.push(expenseData);
+            });
             saveState();
             renderExpenses();
             renderDashboard();
@@ -989,11 +1059,10 @@
         }
         
         DOMElements.expensesTable.addEventListener('click', e => {
-            const deleteBtn = e.target.closest('.delete-btn');
-            if (deleteBtn) {
+            if (e.target.closest('.delete-btn')) {
                 showConfirm('حذف النفقة', 'هل أنت متأكد من حذف هذه النفقة؟').then(confirmed => {
                     if(confirmed) {
-                        state.expenses = state.expenses.filter(exp => exp.id != deleteBtn.dataset.id);
+                        state.expenses = state.expenses.filter(exp => exp.id != e.target.closest('.delete-btn').dataset.id);
                         saveState();
                         renderExpenses();
                         renderDashboard();
@@ -1011,17 +1080,10 @@
                 showToast('الرجاء تحديد تاريخ بداية ونهاية صحيح.', 'error');
                 return;
             }
-            endDate.setHours(23, 59, 59, 999); // Include the whole end day
+            endDate.setHours(23, 59, 59, 999);
 
-            const filteredInvoices = state.invoices.filter(inv => {
-                const invDate = new Date(inv.date);
-                return invDate >= startDate && invDate <= endDate && inv.status === 'paid';
-            });
-            const filteredExpenses = state.expenses.filter(exp => {
-                const expDate = new Date(exp.date);
-                return expDate >= startDate && expDate <= endDate;
-            });
-
+            const filteredInvoices = state.invoices.filter(inv => new Date(inv.date) >= startDate && new Date(inv.date) <= endDate && inv.status === 'paid');
+            const filteredExpenses = state.expenses.filter(exp => new Date(exp.date) >= startDate && new Date(exp.date) <= endDate);
             const totalRevenue = filteredInvoices.reduce((sum, inv) => sum + inv.total, 0);
             const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0);
             const netProfit = totalRevenue - totalExpenses;
@@ -1053,4 +1115,3 @@
     </script>
 </body>
 </html>
-
